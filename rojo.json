@@ -1,0 +1,22 @@
+{
+  "name": "TerrainPlugin",
+  "servePort": 8000,
+  "partitions": {
+    "generator": {
+      "path": "generator/",
+      "target": "ReplicatedStorage.TerrainGenerator"
+    },
+    "plugin": {
+      "path": "plugin/",
+      "target": "ReplicatedStorage.TerrainPlugin.Source"
+    },
+    "roact": {
+      "path": "roact/lib/",
+      "target": "ReplicatedStorage.TerrainPlugin.Roact"
+    },
+    "studio-widgets": {
+      "path": "RoactStudioWidgets/lib",
+      "target": "ReplicatedStorage.TerrainPlugin.RoactStudioWidgets"
+    }
+  }
+}
