@@ -113,6 +113,24 @@ function SmoothChunk:generateTerrain()
 	debug.profileend()
 
 	debug.profilebegin("Rasterizing")
+	-- This section effectively does a 3D bilinear upscale from the cell
+	-- resolution to the voxel resolution.
+
+	-- This section of the code takes a very large fraction of the total
+	-- runtime of the terrain generator, so it's really important for it
+	-- to be fast. This section uses several techniques to make Lua code
+	-- run faster, in particular:
+
+	-- * Removal of function calls in favor of manually inlined code.
+	-- * Avoiding unnecessary table lookups (e.g. math.abs), opting to
+	--   cache in variables.
+	-- * Moving variables into outer loop bodies when possible.
+	-- * Avoiding Lua Bridge invocations, such as Vector3. When 3D math
+	--   is required, we do it manually.
+
+	-- Further improvements in the performance are probably possible,
+	-- but it's gotten to the point where this section is no longer the
+	-- biggest bottleneck.
 	for minX = 0, outerCount do
 		local cellX = minX * cellsPerSample
 		local maxX = minX + 1
@@ -127,6 +145,7 @@ function SmoothChunk:generateTerrain()
 				local cellZ = minZ * cellsPerSample
 				local maxZ = minZ + 1
 
+				-- Collect samples from the 8 corners
 				local x0y0z0 = samples[minXSizeYZ + minYSizeZ + minZ]
 				local x1y0z0 = samples[maxXSizeYZ + minYSizeZ + minZ]
 				local x0y1z0 = samples[minXSizeYZ + maxYSizeZ + minZ]
@@ -168,7 +187,7 @@ function SmoothChunk:generateTerrain()
 							else
 								m = Air
 							end
-							assert(occupancyY[cellZ + dZ + 1] == 'poison')
+							--assert(occupancyY[cellZ + dZ + 1] == 'poison')
 							materialY[cellZ + dZ + 1] = m
 							occupancyY[cellZ + dZ + 1] = o
 						end
