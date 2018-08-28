@@ -45,15 +45,21 @@ function GeneratorService:setSdk(sdk)
 end
 
 function GeneratorService:_rebuildManager()
+	if self.loader then
+		self.loader:destroy()
+	end
 	if self.manager then
 		self.manager:destroy()
 	end
+	local ChunkManager = require(self.sdk.ChunkManager)
+	self.manager = ChunkManager.new(self.sampler, self.chunkClass)
+
 	if self.managerType == '2D' then
-		local ChunkManager2D = require(self.sdk.ChunkManager2D)
-		self.manager = ChunkManager2D.new(self.sampler, self.chunkClass)
+		local ChunkLoader2D = require(self.sdk.ChunkLoader2D)
+		self.loader = ChunkLoader2D.new(self.manager)
 	elseif self.managerType == '3D' then
-		local ChunkManager3D = require(self.sdk.ChunkManager3D)
-		self.manager = ChunkManager3D.new(self.sampler, self.chunkClass)
+		local ChunkLoader3D = require(self.sdk.ChunkLoader3D)
+		self.loader = ChunkLoader3D.new(self.manager)
 	end
 end
 

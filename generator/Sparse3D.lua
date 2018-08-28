@@ -26,12 +26,22 @@ end
 
 function Sparse3D:iter()
 	return coroutine.wrap(function()
-		for key, value in pairs(self.array.iter and self.array:iter() or pairs(self.array)) do
-			local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
-			x = tonumber(x)
-			y = tonumber(y)
-			z = tonumber(z)
-			coroutine.yield(Vector3.new(x, y, z), value)
+		if self.array.iter then
+			for key, value in self.array:iter() do
+				local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
+				x = tonumber(x)
+				y = tonumber(y)
+				z = tonumber(z)
+				coroutine.yield(Vector3.new(x, y, z), value)
+			end
+		else
+			for key, value in pairs(self.array) do
+				local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
+				x = tonumber(x)
+				y = tonumber(y)
+				z = tonumber(z)
+				coroutine.yield(Vector3.new(x, y, z), value)
+			end
 		end
 	end)
 end

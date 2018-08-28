@@ -19,7 +19,6 @@ local function squareIntersect(radius1, x1, y1, radius2, x2, y2)
 
 	if maxY - minY > radius1*2 + radius2*2 + 2 or maxX - minX > radius1*2 + radius2*2 + 2 then
 		-- no overlap fast path
-		print("no overlap", maxY, minY, radius1, radius2)
 		for y = y1 - radius1, y1 + radius1 do
 			for x = x1 - radius1, x1 + radius1 do
 				removed[#removed+1] = Vector2.new(x, y)
