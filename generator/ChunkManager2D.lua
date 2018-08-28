@@ -1,15 +1,23 @@
 local Maid = require(script.Parent.Maid)
 local Sparse3D = require(script.Parent.Sparse3D)
 local Sparse2D = require(script.Parent.Sparse2D)
-local circleIntersect = require(script.Parent.CircleIntersect)
+local squareIntersect = require(script.Parent.squareIntersect)
+local squareDist = require(script.Parent.squareDist)
+local Job = require(script.Parent.Job)
 
 local ChunkManager2D = {}
 ChunkManager2D.__index = ChunkManager2D
 
-ChunkManager2D.chunkSize = 16*4
-
 function ChunkManager2D.new(sampler, chunkClass)
 	local self = {
+		loadRadius = 8, --chunks
+		loadHeight = 8, --chunks
+		chunkSize = 16*4, --studs
+		jobBudget = 8.0, --ms
+		jobTimeout = 1000.0, --ms
+		distFunc = squareDist,
+		intersectFunc = squareIntersect,
+
 		sampler = sampler,
 		chunkClass = chunkClass,
 		chunks = Sparse3D.new(Maid.new()),
@@ -18,13 +26,15 @@ function ChunkManager2D.new(sampler, chunkClass)
 		added = Sparse2D.new(),
 		removed = Sparse2D.new(),
 		stats = {},
-		loadRadius = 8,
-		loadHeight = 8,
+		currentJob = nil,
 	}
 	setmetatable(self, ChunkManager2D)
 
 	self.heartbeatConn = game:GetService("RunService").Heartbeat:Connect(function()
-		self:heartbeat()
+		if not self.currentJob or self.currentJob:expired() then
+			self.currentJob = Job.new(function(job) self:runJob(job) end, self.jobTimeout, "ChunkManager2D")
+		end
+		self.currentJob:tick(self.jobBudget)
 	end)
 
 	return self
@@ -80,7 +90,7 @@ function ChunkManager2D:setAnchor(name, newRadius, newX, newY)
 		newX = newX or oldX
 		newY = newY or oldY
 	end
-	local anchorAdded, anchorRemoved = circleIntersect(oldRadius, oldX, oldY, newRadius, newX, newY)
+	local anchorAdded, anchorRemoved = self.intersectFunc(oldRadius, oldX, oldY, newRadius, newX, newY)
 	for _,pos in pairs(anchorAdded) do
 		self.added:set(pos, true)
 	end
@@ -119,12 +129,10 @@ local function sortedInsert(array, value, lessThan)
 end
 
 function ChunkManager2D:chunkDist(pos)
-	local pos2D = Vector2.new(pos.x, pos.z)
 	local closest = math.huge
 	for name, anchor in pairs(self.anchors) do
 		local x, y = anchor.x, anchor.y
-		local anchorPos = Vector2.new(x, y)
-		local dist = (anchorPos - pos2D).Magnitude
+		local dist = self.distFunc(x - pos.x, y - pos.z)
 		if dist < closest then
 			closest = dist
 		end
@@ -133,9 +141,7 @@ function ChunkManager2D:chunkDist(pos)
 	return closest
 end
 
-function ChunkManager2D:heartbeat()
-	debug.profilebegin("ChunkManager2D bookkeeping")
-	local bookkeepingStart = tick()
+function ChunkManager2D:runJob(job)
 	local player = game.Players.LocalPlayer
 	if player.Character then
 		local hrp = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
@@ -148,16 +154,15 @@ function ChunkManager2D:heartbeat()
 		return a.distance < b.distance
 	end
 
-	debug.profilebegin("Re-sorting queue")
 	for i = 1, #self.queued do
+		job:breath("Sorting queue")
 		local entry = self.queued[i]
 		entry.distance = self:chunkDist(entry.position)
 	end
 	table.sort(self.queued, distLessThan)
-	debug.profileend()
 
-	debug.profilebegin("Adding chunks to queue")
 	for columnPos in self.added:iter() do
+		job:breath("Inserting new entries into queue")
 		for z = 0, self.loadHeight - 1 do
 			local chunkPos = Vector3.new(columnPos.x, z, columnPos.y)
 			local entry = {
@@ -167,54 +172,42 @@ function ChunkManager2D:heartbeat()
 			sortedInsert(self.queued, entry, distLessThan)
 		end
 	end
-	debug.profileend()
 
-	debug.profilebegin("Removing chunks")
 	for columnPos in self.removed:iter() do
+		job:breath("Destroying chunks")
 		for z = 0, self.loadHeight - 1 do
 			local chunkPos = Vector3.new(columnPos.x, z, columnPos.y)
 			self.chunks:set(chunkPos, nil)
 		end
 	end
-	debug.profileend()
 
-	debug.profilebegin("Removing chunks from queue")
 	for i = #self.queued, 1, -1 do
+		job:breath("Cleaning queue")
 		local pos = self.queued[i].position
 		if self.removed:get(Vector2.new(pos.x, pos.z)) then
 			table.remove(self.queued, i)
 		end
 	end
-	debug.profileend()
 
 	self.added = Sparse2D.new({})
 	self.removed = Sparse2D.new({})
 
-	local bookkeepingStop = tick()
-	debug.profileend()
-	self:reportStat("Bookkeeping", "ms", (bookkeepingStop - bookkeepingStart)*1000)
-
-	local start = tick()
-	local maxTime = 1.0 / 90
-	local numProcessed = 0
-
 	local _, nextChunk = next(self.queued)
-	while nextChunk and tick() - start < maxTime do
+	while nextChunk do
+		job:breath("Generating chunks")
 		local chunkPos = nextChunk.position
 		if not self.chunks:get(chunkPos) then
+			debug.profilebegin("Single chunk")
 			local chunkStart = tick()
 			local newChunk = self.chunkClass.new(self.sampler, chunkPos, self.chunkSize)
 			local chunkFinish = tick()
+			debug.profileend()
 			self:reportStat("Time/Chunk", "ms", (chunkFinish - chunkStart)*1000, 3.0)
 			self.chunks:set(chunkPos, newChunk)
 		end
-		numProcessed = numProcessed + 1
 		table.remove(self.queued, 1)
 		_, nextChunk = next(self.queued)
 	end
-
-	self:reportStat("Queue Size", "chunks", #self.queued)
-	self:reportStat("Chunks/Frame", "chunks", numProcessed)
 end
 
 return ChunkManager2D
